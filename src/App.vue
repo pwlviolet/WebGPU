@@ -3,13 +3,15 @@
 </template>
 <script setup lang="ts">
 import { onMounted } from 'vue';
-import triangleVert from './shaders/triangle.vert.wgsl?raw'
-import redFrag from './shaders/red.frag.wgsl?raw'
+import positionVert from './shaders/basic.vert.wgsl?raw'
+import uniformfrag from './shaders/position.frag.wgsl?raw'
+import * as cube from './util/cube'
+import * as math from './util/math'
 //判断浏览器是否支持webgpu
 if (!navigator.gpu)
   throw new Error('no support WebGPU')
 onMounted(() => {
-run()
+  run()
 
 
 })
@@ -43,21 +45,68 @@ async function initWebGPU(canvas: HTMLCanvasElement) {
     // alphaMode?: GPUCanvasAlphaMode;
   }
   context.configure(GPUCanvasConfiguration)
-  return{device,adapter,format,context}
+  return { device, adapter, format, context }
 }
 
-async function initPipeline(device: GPUDevice, format: GPUTextureFormat): Promise<GPURenderPipeline> {
+async function initPipeline(device: GPUDevice, format: GPUTextureFormat) {
+  //创建顶点buffer
+  const vertexbuffer = device.createBuffer({
+    size: cube.vertex.byteLength,
+    usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST
+  })
+  //创建uniformbuffer
+  const uniformbuffer = device.createBuffer({
+    size: 4 * 4, //4*float32
+    usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
+  })
+  //创建mvp buffer
+  const mvpbuffer = device.createBuffer({
+    size: 4 * 4 * 4,
+    usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
+  })
+  //写入device
+  device.queue.writeBuffer(vertexbuffer, 0, cube.vertex)
+  // device.queue.writeBuffer(uniformbuffer, 0, new Float32Array([1,1,0,1]))
+
   const vertex = device.createShaderModule({
-    code: triangleVert
+    code: positionVert
   })
   const fragment = device.createShaderModule({
-    code: redFrag
+    code: uniformfrag
   })
   const descriptor: GPURenderPipelineDescriptor = {
     layout: 'auto',
     vertex: {
       module: vertex,
-      entryPoint: 'main'
+      entryPoint: 'main',
+      buffers: [{
+        arrayStride: 5 * 4, // 3 position 2 uv,
+        attributes: [
+          {
+            // position
+            shaderLocation: 0,
+            offset: 0,
+            format: 'float32x3',
+          },
+          {
+            // uv
+            shaderLocation: 1,
+            offset: 3 * 4,
+            format: 'float32x2',
+          }
+        ]
+      }]
+      // buffers: [{
+      //           arrayStride: 5 * 4, // 3 float32,2uv
+      //           attributes: [
+      //               {
+      //                   // position xyz
+      //                   shaderLocation: 0,
+      //                   offset: 0,
+      //                   format: 'float32x3',
+      //               }
+      //           ]
+      //             }]
     },
     fragment: {
       module: fragment,
@@ -67,15 +116,42 @@ async function initPipeline(device: GPUDevice, format: GPUTextureFormat): Promis
       }]
     },
     primitive: {
-      topology: 'triangle-strip'
+      topology: 'triangle-list',
+      //去除背面
+      cullMode: 'back',
     }
+    //深度测试
+    // ,      depthStencil: {
+    //         depthWriteEnabled: true,
+    //         depthCompare: 'less',
+    //         format: 'depth24plus',
+    //     }
   }
+
   //创建渲染管线
   const Pipeline = device.createRenderPipeline(descriptor)
-  return Pipeline
+  const uniformgroup = device.createBindGroup({
+    layout: Pipeline.getBindGroupLayout(0),
+    entries:
+      [
+        //   {
+        //   binding:0,
+        //   resource:{
+        //     buffer:uniformbuffer
+        //   }
+        // },
+        {
+          binding: 0,
+          resource: {
+            buffer: mvpbuffer
+          }
+        }
+      ]
+  })
+  return { Pipeline, vertexbuffer, uniformgroup, mvpbuffer }
 }
 
-async function draw(device: GPUDevice, context: GPUCanvasContext, Pipeline: GPURenderPipeline) {
+async function draw(device: GPUDevice, context: GPUCanvasContext, Pipeline: GPURenderPipeline, vertexbuffer: GPUBuffer, uniformgroup: GPUBindGroup) {
   //创建编码器
   const encoder = device.createCommandEncoder();
   const view = context.getCurrentTexture().createView();
@@ -93,20 +169,44 @@ async function draw(device: GPUDevice, context: GPUCanvasContext, Pipeline: GPUR
   const passencoder = encoder.beginRenderPass(renderPassDescriptor);
   //传入渲染管线
   passencoder.setPipeline(Pipeline);
-  passencoder.draw(3)
+  //设置顶点缓冲
+  passencoder.setVertexBuffer(0, vertexbuffer)
+  passencoder.setBindGroup(0, uniformgroup)
+  passencoder.draw(cube.vertexCount)
   passencoder.end()
   // webgpu run in a separate process, all the commands will be executed after submit
   device.queue.submit([encoder.finish()])
 }
 
 async function run() {
-  const canvas=document.querySelector('canvas')
-  if(!canvas)
-  throw new Error('no canvas')
-  const {adapter,device,context,format}=await initWebGPU(canvas)
-  const pipeline=await initPipeline(device,format)
-  draw(device,context,pipeline)
-  
+  const canvas = document.querySelector('canvas')
+  if (!canvas)
+    throw new Error('no canvas')
+  const { adapter, device, context, format } = await initWebGPU(canvas)
+  const { Pipeline, vertexbuffer, uniformgroup, mvpbuffer } = await initPipeline(device, format)
+  draw(device, context, Pipeline, vertexbuffer, uniformgroup)
+  // default state
+  let aspect = window.innerWidth / window.innerHeight;
+  const position = { x: 0, y: 0, z: -5 }
+  const scale = { x: 1, y: 1, z: 1 }
+  const rotation = { x: 0, y: 0, z: 0 }
+  // start loop
+  function frame() {
+    // rotate by time, and update transform matrix
+    const now = Date.now() / 1000
+    rotation.x = Math.sin(now)
+    rotation.y = Math.cos(now)
+    const mvpMatrix = math.getMvpMatrix(aspect, position, rotation, scale)
+    device.queue.writeBuffer(
+      mvpbuffer,
+      0,
+      mvpMatrix.buffer
+    )
+    // then draw
+    draw(device, context, Pipeline, vertexbuffer, uniformgroup)
+    requestAnimationFrame(frame)
+  }
+  frame()
 }
 </script>
 
@@ -121,7 +221,8 @@ async function run() {
   padding: 0;
   overflow: hidden;
 }
-#canvas{
+
+#canvas {
   width: 100vw;
   height: 100vh;
 }
