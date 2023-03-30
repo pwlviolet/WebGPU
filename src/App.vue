@@ -2,19 +2,65 @@
   <canvas id="canvas"></canvas>
 </template>
 <script setup lang="ts">
-import { onMounted } from 'vue';
+import { guardReactiveProps, onMounted } from 'vue';
 import positionVert from './shaders/basic.vert.wgsl?raw'
 import uniformfrag from './shaders/position.frag.wgsl?raw'
 import * as cube from './util/cube'
 import * as math from './util/math'
+import * as dat from 'dat.gui';
 //判断浏览器是否支持webgpu
 if (!navigator.gpu)
   throw new Error('no support WebGPU')
+//全局变量声明
+let aspect = window.innerWidth / window.innerHeight;
+const position = { x: 0, y: 0, z: -5 }
+const scale = { x: 1, y: 1, z: 1 }
+const rotation = { x: 0, y: 0, z: 0 }
 onMounted(() => {
   run()
+  AddGUI()
+}
+
+)
+function AddGUI() {
+  //使用dat.gui
+  const gui = new dat.GUI();
+  const positionFolder = gui.addFolder('位置');
+  positionFolder.add(position, 'x')
+    .min(-2) //最小x位置
+    .max(2)//最大x位置
+    .step(0.1)//精度
+    .name("x轴")//命名
+  positionFolder.add(position, 'y')
+    .min(-2) //最小y位置
+    .max(2)//最大y位置
+    .step(0.1)//精度
+    .name("y轴")//命名
+  positionFolder.add(position, 'z')
+    .min(-10) //最小z位置
+    .max(-5)//最大z位置
+    .step(0.1)//精度
+    .name("z轴")//命名
+  const scaleFolder = gui.addFolder('缩放');
+  scaleFolder.add(scale, 'x')
+    .min(0.1)
+    .max(10)
+    .step(0.1)
+    .name('x')
+  scaleFolder.add(scale, 'y')
+    .min(0.1)
+    .max(10)
+    .step(0.1)
+    .name('y')
+  scaleFolder.add(scale, 'z')
+    .min(0.1)
+    .max(10)
+    .step(0.1)
+    .name('z')
 
 
-})
+}
+
 
 async function initWebGPU(canvas: HTMLCanvasElement) {
   //创建一个适配器
@@ -186,10 +232,7 @@ async function run() {
   const { Pipeline, vertexbuffer, uniformgroup, mvpbuffer } = await initPipeline(device, format)
   draw(device, context, Pipeline, vertexbuffer, uniformgroup)
   // default state
-  let aspect = window.innerWidth / window.innerHeight;
-  const position = { x: 0, y: 0, z: -5 }
-  const scale = { x: 1, y: 1, z: 1 }
-  const rotation = { x: 0, y: 0, z: 0 }
+
   // start loop
   function frame() {
     // rotate by time, and update transform matrix
@@ -215,7 +258,7 @@ async function run() {
 
 
 
-<style >
+<style scoped>
 * {
   margin: 0;
   padding: 0;
@@ -223,7 +266,11 @@ async function run() {
 }
 
 #canvas {
-  width: 100vw;
-  height: 100vh;
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 0;
 }
 </style>
