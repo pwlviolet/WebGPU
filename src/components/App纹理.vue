@@ -6,8 +6,8 @@ import { guardReactiveProps, onMounted } from 'vue';
 import positionVert from './shaders/basic.vert.wgsl?raw'
 import uniformfrag from './shaders/position.frag.wgsl?raw'
 import imageTexture from './shaders/imageTexture.frag.wgsl?raw'
-import * as cube from './util/cube'
-import * as math from './util/math'
+import * as cube from '../util/cube'
+import * as math from '../util/math'
 import * as dat from 'dat.gui';
 //导入图片
 import textureUrl from '/texture.webp?url'

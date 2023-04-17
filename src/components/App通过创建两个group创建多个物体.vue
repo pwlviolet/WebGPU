@@ -5,12 +5,9 @@
 import { guardReactiveProps, onMounted } from 'vue';
 import positionVert from './shaders/basic.vert.wgsl?raw'
 import uniformfrag from './shaders/position.frag.wgsl?raw'
-import imageTexture from './shaders/imageTexture.frag.wgsl?raw'
-import * as cube from './util/cube'
-import * as math from './util/math'
+import * as cube from '../util/cube'
+import * as math from '../util/math'
 import * as dat from 'dat.gui';
-//导入图片
-import textureUrl from '/texture.webp?url'
 //判断浏览器是否支持webgpu
 if (!navigator.gpu)
   throw new Error('no support WebGPU')
@@ -115,7 +112,7 @@ async function initPipeline(device: GPUDevice, format: GPUTextureFormat) {
   //创建mvp buffer
   const mvpbuffer = device.createBuffer({
     // size: 4 * 4 * 4,
-    size: 256 * 2,
+    size:256*2,
     usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
   })
   // const mvpbuffer1=device.createBuffer({
@@ -166,24 +163,13 @@ async function initPipeline(device: GPUDevice, format: GPUTextureFormat) {
       //           ]
       //             }]
     },
-    // fragment: {
-    //   module: fragment,
-    //   entryPoint: 'main',
-    //   targets: [{
-    //     format: format
-    //   }]
-    // },
     fragment: {
-            module: device.createShaderModule({
-                code: imageTexture,
-            }),
-            entryPoint: 'main',
-            targets: [
-                {
-                    format: format
-                }
-            ]
-        },
+      module: fragment,
+      entryPoint: 'main',
+      targets: [{
+        format: format
+      }]
+    },
     primitive: {
       topology: 'triangle-list',
       //去除背面
@@ -213,25 +199,25 @@ async function initPipeline(device: GPUDevice, format: GPUTextureFormat) {
           binding: 0,
           resource: {
             buffer: mvpbuffer,
-            offset: 0
+            offset:0
           }
         }
       ]
   })
-  const mvp2group = device.createBindGroup({
-    layout: Pipeline.getBindGroupLayout(0),
-    entries: [{
-      binding: 0,
-      resource: {
-        buffer: mvpbuffer,
-        offset: 256,
-      }
-    }]
-  })
-  return { Pipeline, vertexbuffer, uniformgroup, mvpbuffer, mvp2group }
+  const mvp2group=device.createBindGroup({
+      layout:Pipeline.getBindGroupLayout(0),
+      entries:[{
+        binding:0,
+        resource:{
+          buffer:mvpbuffer,
+          offset:256,
+        }
+      }]
+    })
+  return { Pipeline, vertexbuffer, uniformgroup, mvpbuffer,mvp2group }
 }
 
-async function draw(device: GPUDevice, context: GPUCanvasContext, Pipeline: GPURenderPipeline, vertexbuffer: GPUBuffer, uniformgroup: GPUBindGroup, mvp2group: GPUBindGroup,textureGroup:GPUBindGroup) {
+async function draw(device: GPUDevice, context: GPUCanvasContext, Pipeline: GPURenderPipeline, vertexbuffer: GPUBuffer, uniformgroup: GPUBindGroup,mvp2group:GPUBindGroup) {
   //创建编码器
   const encoder = device.createCommandEncoder();
   const view = context.getCurrentTexture().createView();
@@ -251,11 +237,9 @@ async function draw(device: GPUDevice, context: GPUCanvasContext, Pipeline: GPUR
   passencoder.setPipeline(Pipeline);
   //设置顶点缓冲
   passencoder.setVertexBuffer(0, vertexbuffer)
-  //设置纹理
-  passencoder.setBindGroup(1, textureGroup)
   passencoder.setBindGroup(0, uniformgroup)
   passencoder.draw(cube.vertexCount)
-  passencoder.setBindGroup(0, mvp2group)
+  passencoder.setBindGroup(0,mvp2group)
   passencoder.draw(cube.vertexCount)
   passencoder.end()
   // webgpu run in a separate process, all the commands will be executed after submit
@@ -267,52 +251,8 @@ async function run() {
   if (!canvas)
     throw new Error('no canvas')
   const { adapter, device, context, format } = await initWebGPU(canvas)
-  const { Pipeline, vertexbuffer, uniformgroup, mvpbuffer, mvp2group } = await initPipeline(device, format)
-  //获取贴图
-  const res = await fetch(textureUrl)
-  const img = await res.blob()
-  const bitmap = await createImageBitmap(img)
-  const textureSize = [bitmap.width, bitmap.height]
-  //创建材质
-  const texture = device.createTexture({
-    size: textureSize,
-    format: 'rgba8unorm',
-    usage:
-      GPUTextureUsage.TEXTURE_BINDING |
-      GPUTextureUsage.COPY_DST |
-      GPUTextureUsage.RENDER_ATTACHMENT
-  })
-  // update image to GPUTexture
-
-  // Create a sampler with linear filtering for smooth interpolation.线性采样
-  const sampler = device.createSampler({
-    // addressModeU: 'repeat',
-    // addressModeV: 'repeat',
-    magFilter: 'linear',
-    minFilter: 'linear'
-  })
-  const textureGroup = device.createBindGroup({
-    label: 'Texture Group with Texture/Sampler',
-    layout: Pipeline.getBindGroupLayout(1),
-    entries: [
-      {
-        binding: 0,
-        resource: sampler
-      },
-      {
-        binding: 1,
-        resource: texture.createView()
-      }
-    ]
-  })
-
-  device.queue.copyExternalImageToTexture(
-    { source: bitmap },
-    { texture: texture },
-    textureSize
-  )
-
-  draw(device, context, Pipeline, vertexbuffer, uniformgroup, mvp2group,textureGroup)
+  const { Pipeline, vertexbuffer, uniformgroup, mvpbuffer,mvp2group } = await initPipeline(device, format)
+  draw(device, context, Pipeline, vertexbuffer, uniformgroup,mvp2group)
   // default state
 
   // start loop
@@ -334,7 +274,7 @@ async function run() {
       mvpMatrix2
     )
     // then draw
-    draw(device, context, Pipeline, vertexbuffer, uniformgroup, mvp2group,textureGroup)
+    draw(device, context, Pipeline, vertexbuffer, uniformgroup,mvp2group)
     requestAnimationFrame(frame)
   }
   frame()
